@@ -1,6 +1,6 @@
 #include "p2p_config.h"
 
-COLORREF g_clr = RGB(255, 255, 0);
+COLORREF g_clr = CLR_TRY;
 struct sockaddr_in g_srv;
 SOCKET g_sock;
 
@@ -18,12 +18,10 @@ void AutoScan() {
     int o = 1; setsockopt(g_sock, SOL_SOCKET, SO_BROADCAST, (char*)&o, sizeof(o));
     struct sockaddr_in b = { AF_INET, htons(LAN_PORT), INADDR_BROADCAST };
     sendto(g_sock, "SCAN", 4, 0, (struct sockaddr*)&b, sizeof(b));
-    struct timeval t = {0, 500000};
-    setsockopt(g_sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&t, sizeof(t));
+    struct timeval t = {0, 500000}; setsockopt(g_sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&t, sizeof(t));
     struct sockaddr_in f; int fl = sizeof(f); char buf[64];
     if(recvfrom(g_sock, buf, 64, 0, (struct sockaddr*)&f, &fl) > 0) {
-        g_srv = f; g_srv.sin_port = htons(P2P_PORT);
-        g_clr = RGB(0, 255, 255);
+        g_srv = f; g_srv.sin_port = htons(P2P_PORT); g_clr = CLR_LAN;
     }
 }
 
@@ -33,7 +31,7 @@ int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     AutoScan();
 
     if(DialogBoxParamA(hI, MAKEINTRESOURCEA(IDD_LOGIN), NULL, DlgProc, 0) != IDOK) return 0;
-    if(g_clr != RGB(0, 255, 255)) g_clr = RGB(0, 255, 0);
+    if(g_clr != CLR_LAN) g_clr = CLR_WAN;
 
     while(1) {
         HDC hdc = GetDC(NULL); POINT p; GetCursorPos(&p);
@@ -42,8 +40,11 @@ int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
         DeleteObject(br); ReleaseDC(NULL, hdc);
 
         if(GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
-            P2PPacket pkt = { AUTH_MAGIC, 2, p.x, p.y };
+            P2PPacket pkt = { AUTH_MAGIC, 1, p.x, p.y }; // 发送移动+点击逻辑
             sendto(g_sock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&g_srv, sizeof(g_srv));
+            pkt.type = 2;
+            sendto(g_sock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&g_srv, sizeof(g_srv));
+            Sleep(50);
         }
         if(GetAsyncKeyState(VK_ESCAPE)) break;
         Sleep(20);
