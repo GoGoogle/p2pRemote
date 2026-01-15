@@ -4,14 +4,13 @@
 // 强制使用 UTF-8 编码，防止中文乱码
 #pragma code_page(65001)
 
-IDD_LOGIN DIALOGEX 0, 0, 180, 90
+IDD_LOGIN DIALOGEX 0, 0, 160, 75
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE
-CAPTION "P2P 控制端"
+CAPTION "远程控制登录"
 FONT 9, "Microsoft YaHei"
 BEGIN
-    LTEXT           "请输入目标服务器 IP 地址:", -1, 10, 10, 160, 8
-    EDITTEXT        IDC_EDIT_ID, 10, 22, 160, 14, ES_AUTOHSCROLL
-    LTEXT           "提示：手动输入 IP 后点击开始连接。\n连接后按 ESC 退出控制状态。", IDC_STATUS, 10, 42, 160, 20
-    DEFPUSHBUTTON   "开始连接", IDOK, 40, 65, 45, 15
-    PUSHBUTTON      "退出", IDCANCEL, 95, 65, 45, 15
+    LTEXT           "远程 IP 地址:", -1, 10, 15, 60, 8
+    EDITTEXT        IDC_EDIT_ID, 10, 25, 140, 14, ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "连接", IDOK, 30, 50, 40, 15
+    PUSHBUTTON      "退出", IDCANCEL, 85, 50, 40, 15
 END
