@@ -1,0 +1,48 @@
+name: P2P_Manual_Release
+
+on:
+  workflow_dispatch: # 开启手动触发按钮
+    inputs:
+      version_tag:
+        description: '发布版本号 (例如 v1.0.1)'
+        required: true
+        default: 'v1.0.0'
+      release_note:
+        description: '更新说明'
+        required: false
+        default: '手动编译发布 - 优化密信传输与剪贴板同步'
+
+permissions:
+  contents: write 
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MSVC Extreme Build
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          :: /O1 最小体积 /MT 静态链接
+          cl.exe /O1 /MT /utf-8 /DNDEBUG client.c /link /OUT:Control.exe user32.lib gdi32.lib ws2_32.lib ole32.lib shell32.lib
+          cl.exe /O1 /MT /utf-8 /DNDEBUG server.c /link /OUT:Service.exe user32.lib gdi32.lib ws2_32.lib d3d11.lib dxgi.lib advapi32.lib ole32.lib
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Control.exe
+            Service.exe
+          tag_name: ${{ github.event.inputs.version_tag }}
+          name: "Release ${{ github.event.inputs.version_tag }}"
+          body: |
+            ### 🛠 手动触发编译说明
+            - **版本**: ${{ github.event.inputs.version_tag }}
+            - **说明**: ${{ github.event.inputs.release_note }}
+            ---
+            - **体积**: 极致压缩 (<200KB)
+            - **特性**: P2P/DXGI/锁屏突破/剪贴板/密信加密
+          draft: false
+          prerelease: false
