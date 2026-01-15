@@ -1,6 +1,21 @@
 #define NONAMELESSUNION
 #include "p2p_config.h"
-#include <gdiplus/gdiplusflat.h>
+#include <gdiplus.h>
+
+// --- 手动声明 C 风格 GDI+ 平面接口 (兼容所有 SDK) ---
+#ifdef __cplusplus
+extern "C" {
+#endif
+    WINBASEAPI int WINAPI GdiplusStartup(ULONG_PTR*, const void*, void*);
+    WINBASEAPI int WINAPI GdipCreateBitmapFromHBITMAP(HBITMAP, HPALETTE, GpBitmap**);
+    WINBASEAPI int WINAPI GdipSaveImageToStream(GpImage*, IStream*, const CLSID*, const void*);
+    WINBASEAPI int WINAPI GdipDisposeImage(GpImage*);
+    WINBASEAPI int WINAPI GdipGetImageEncodersSize(UINT*, UINT*);
+    WINBASEAPI int WINAPI GdipGetImageEncoders(UINT, UINT, GpImageCodecInfo*);
+    WINBASEAPI void WINAPI GdiplusShutdown(ULONG_PTR);
+#ifdef __cplusplus
+}
+#endif
 
 SOCKET g_srvSock;
 struct sockaddr_in g_clientAddr;
@@ -8,7 +23,6 @@ BOOL g_hasClient = FALSE;
 NOTIFYICONDATAW g_nid = { 0 };
 ULONG_PTR g_gdiToken;
 
-// 获取编码器
 int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     UINT num = 0, size = 0;
     GdipGetImageEncodersSize(&num, &size);
@@ -24,7 +38,6 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     free(pIci); return -1;
 }
 
-// STUN 探测
 void GetPublicIP(char* outIP) {
     strcpy(outIP, "Detecting...");
     SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
@@ -35,8 +48,7 @@ void GetPublicIP(char* outIP) {
         if (sscanf(STUN_SERVERS[i], "%[^:]:%d", host, &port) != 2) continue;
         struct hostent* he = gethostbyname(host);
         if (!he) continue;
-        struct sockaddr_in sa = { AF_INET, htons(port) };
-        memcpy(&sa.sin_addr, he->h_addr, he->h_length);
+        struct sockaddr_in sa = { AF_INET, htons(port), *((struct in_addr*)he->h_addr) };
         unsigned char req[20] = { 0 };
         *(unsigned short*)req = htons(0x0001);
         *(unsigned int*)(req + 4) = htonl(0x2112A442);
@@ -57,7 +69,6 @@ void GetPublicIP(char* outIP) {
     closesocket(s);
 }
 
-// 屏幕发送线程
 DWORD WINAPI ScreenThread(LPVOID lp) {
     int w = GetSystemMetrics(SM_CXSCREEN), h = GetSystemMetrics(SM_CYSCREEN);
     HDC hdcScr = GetDC(NULL);
@@ -83,7 +94,6 @@ DWORD WINAPI ScreenThread(LPVOID lp) {
             pkt.slice_size = (size - i < CHUNK_SIZE) ? (size - i) : CHUNK_SIZE;
             memcpy(pkt.data, data + i, pkt.slice_size);
             sendto(g_srvSock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&g_clientAddr, sizeof(g_clientAddr));
-            if(i % (CHUNK_SIZE * 30) == 0) Sleep(1);
         }
         GlobalUnlock(hg); stream->lpVtbl->Release(stream);
         GdipDisposeImage((GpImage*)bmp); DeleteObject(hBmp); DeleteDC(hdcMem);
@@ -106,7 +116,7 @@ LRESULT CALLBACK TrayProc(HWND hWnd, UINT m, WPARAM w, LPARAM l) {
 
 int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     WSADATA wsa; WSAStartup(0x0202, &wsa);
-    struct GdiplusStartupInput gsi = {1, NULL, FALSE, FALSE};
+    struct { UINT32 v; PVOID p1; BOOL b1, b2; } gsi = {1, NULL, FALSE, FALSE};
     GdiplusStartup(&g_gdiToken, &gsi, NULL);
     char pubIP[64]; GetPublicIP(pubIP);
     wchar_t info[128]; swprintf(info, 128, L"服务端就绪\n公网IP: %S", pubIP);
