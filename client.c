@@ -1,6 +1,19 @@
 #define NONAMELESSUNION
 #include "p2p_config.h"
-#include <gdiplus/gdiplusflat.h>
+#include <gdiplus.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+    WINBASEAPI int WINAPI GdiplusStartup(ULONG_PTR*, const void*, void*);
+    WINBASEAPI int WINAPI GdipCreateBitmapFromStream(IStream*, GpBitmap**);
+    WINBASEAPI int WINAPI GdipCreateFromHDC(HDC, GpGraphics**);
+    WINBASEAPI int WINAPI GdipDrawImageRectI(GpGraphics*, GpImage*, int, int, int, int);
+    WINBASEAPI int WINAPI GdipDeleteGraphics(GpGraphics*);
+    WINBASEAPI int WINAPI GdipDisposeImage(GpImage*);
+#ifdef __cplusplus
+}
+#endif
 
 SOCKET g_sock;
 struct sockaddr_in g_srv;
@@ -76,7 +89,7 @@ INT_PTR CALLBACK DlgProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 
 int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     WSADATA wsa; WSAStartup(0x0202, &wsa);
-    struct GdiplusStartupInput gsi = {1, NULL, FALSE, FALSE};
+    struct { UINT32 v; PVOID p1; BOOL b1, b2; } gsi = {1, NULL, FALSE, FALSE};
     GdiplusStartup(&g_gdiToken, &gsi, NULL);
     if (DialogBoxParamA(hI, MAKEINTRESOURCEA(IDD_LOGIN), NULL, DlgProc, 0) != IDOK) return 0;
     g_sock = socket(AF_INET, SOCK_DGRAM, 0);
