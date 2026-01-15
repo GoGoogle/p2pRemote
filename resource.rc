@@ -2,15 +2,15 @@
 #include "p2p_config.h"
 #include <windows.h>
 
-// 增加 WS_VISIBLE 确保窗口可见
+// IDD_LOGIN (101) 必须存在
 IDD_LOGIN DIALOGEX 0, 0, 180, 85
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE
-CAPTION "Gemini P2P 控制端"
+CAPTION "Control 连接"
 FONT 9, "Microsoft YaHei"
 BEGIN
-    LTEXT           "目标 IP (启动时自动探测局域网):", -1, 10, 10, 160, 8
+    LTEXT           "请输入目标 IP:", -1, 10, 10, 160, 8
     EDITTEXT        IDC_EDIT_ID, 10, 22, 160, 14, ES_AUTOHSCROLL
-    LTEXT           "提示: 连接成功后按 ESC 退出", -1, 10, 42, 160, 8
+    LTEXT           "状态: 正在初始化...", IDC_STATUS, 10, 42, 160, 8
     DEFPUSHBUTTON   "连接", IDOK, 45, 62, 40, 14
     PUSHBUTTON      "退出", IDCANCEL, 95, 62, 40, 14
 END
