@@ -1,21 +1,17 @@
-#define NONAMELESSUNION
 #include "p2p_config.h"
-#include <gdiplus.h>
 
-// --- 手动声明 C 风格 GDI+ 平面接口 (兼容所有 SDK) ---
-#ifdef __cplusplus
-extern "C" {
-#endif
-    WINBASEAPI int WINAPI GdiplusStartup(ULONG_PTR*, const void*, void*);
-    WINBASEAPI int WINAPI GdipCreateBitmapFromHBITMAP(HBITMAP, HPALETTE, GpBitmap**);
-    WINBASEAPI int WINAPI GdipSaveImageToStream(GpImage*, IStream*, const CLSID*, const void*);
-    WINBASEAPI int WINAPI GdipDisposeImage(GpImage*);
-    WINBASEAPI int WINAPI GdipGetImageEncodersSize(UINT*, UINT*);
-    WINBASEAPI int WINAPI GdipGetImageEncoders(UINT, UINT, GpImageCodecInfo*);
-    WINBASEAPI void WINAPI GdiplusShutdown(ULONG_PTR);
-#ifdef __cplusplus
-}
-#endif
+// --- 手动定义 GDI+ 类型和 C 平面接口声明 (避开 C++ 冲突) ---
+typedef void GpBitmap;
+typedef void GpImage;
+typedef struct { UINT32 v; PVOID p1; BOOL b1, b2; } Gsi;
+typedef struct { CLSID Clsid; GUID ListGuid; const WCHAR* MediaType; const WCHAR* FileNameExtension; const WCHAR* MimeType; const WCHAR* FormatDescription; const WCHAR* CodecName; const WCHAR* DllName; const WCHAR* FormatID; UINT Flags; UINT Version; UINT SigCount; UINT SigSize; const BYTE* SigPattern; const BYTE* SigMask; } GpCodec;
+
+extern __declspec(dllimport) int WINAPI GdiplusStartup(ULONG_PTR*, Gsi*, void*);
+extern __declspec(dllimport) int WINAPI GdipCreateBitmapFromHBITMAP(HBITMAP, HPALETTE, GpBitmap**);
+extern __declspec(dllimport) int WINAPI GdipSaveImageToStream(GpImage*, IStream*, const CLSID*, const void*);
+extern __declspec(dllimport) int WINAPI GdipDisposeImage(GpImage*);
+extern __declspec(dllimport) int WINAPI GdipGetImageEncodersSize(UINT*, UINT*);
+extern __declspec(dllimport) int WINAPI GdipGetImageEncoders(UINT, UINT, GpCodec*);
 
 SOCKET g_srvSock;
 struct sockaddr_in g_clientAddr;
@@ -27,7 +23,7 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     UINT num = 0, size = 0;
     GdipGetImageEncodersSize(&num, &size);
     if (size == 0) return -1;
-    GpImageCodecInfo* pIci = (GpImageCodecInfo*)malloc(size);
+    GpCodec* pIci = (GpCodec*)malloc(size);
     GdipGetImageEncoders(num, size, pIci);
     for (UINT j = 0; j < num; ++j) {
         if (wcscmp(pIci[j].MimeType, format) == 0) {
@@ -116,7 +112,7 @@ LRESULT CALLBACK TrayProc(HWND hWnd, UINT m, WPARAM w, LPARAM l) {
 
 int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     WSADATA wsa; WSAStartup(0x0202, &wsa);
-    struct { UINT32 v; PVOID p1; BOOL b1, b2; } gsi = {1, NULL, FALSE, FALSE};
+    Gsi gsi = {1, NULL, FALSE, FALSE};
     GdiplusStartup(&g_gdiToken, &gsi, NULL);
     char pubIP[64]; GetPublicIP(pubIP);
     wchar_t info[128]; swprintf(info, 128, L"服务端就绪\n公网IP: %S", pubIP);
@@ -139,7 +135,13 @@ int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
         if (recvfrom(g_srvSock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&from, &fl) > 0) {
             if (pkt.magic == AUTH_MAGIC) {
                 g_clientAddr = from; g_hasClient = TRUE;
-                if (pkt.type == 1) { SetCursorPos(pkt.x, pkt.y); mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0); }
+                if (pkt.type == 1) { // 左键
+                    SetCursorPos(pkt.offset, pkt.total_size); 
+                    mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0); 
+                } else if (pkt.type == 3) { // 右键
+                    SetCursorPos(pkt.offset, pkt.total_size);
+                    mouse_event(MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+                }
             }
         }
     }
