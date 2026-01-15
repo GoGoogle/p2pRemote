@@ -18,16 +18,12 @@
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ole32.lib")
 
-// --- 全局配置 ---
 #define ENABLE_TRAY   1
-
-// --- 资源 ID ---
 #define IDD_LOGIN     101
 #define IDC_EDIT_ID   1001
 #define ID_TRAY_EXIT  2001
 #define WM_TRAY_MSG   (WM_USER + 2)
 
-// --- STUN 配置 (2026-01-15) ---
 static const char* STUN_SERVERS[] = {
     "stun.qq.com:3478", "stun.aliyun.com:3478", "stun.huawei.com:3478",
     "stun.cloudflare.com:3478", "stun.l.google.com:19302", "stun1.l.google.com:19302",
@@ -43,10 +39,10 @@ static const char* STUN_SERVERS[] = {
 typedef struct {
     unsigned int magic;
     int type;       // 1: CMD, 2: SCREEN_JPEG
-    int frame_id;   // 帧序号
-    int offset;     // 字节偏移
-    int total_size; // JPEG 总大小
-    int slice_size; // 本包大小
+    int frame_id;   
+    int offset;     
+    int total_size; 
+    int slice_size; 
     unsigned char data[CHUNK_SIZE];
 } P2PPacket;
 #pragma pack(pop)
