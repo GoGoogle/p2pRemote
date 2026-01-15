@@ -1,19 +1,17 @@
-#define NONAMELESSUNION
 #include "p2p_config.h"
-#include <gdiplus.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-    WINBASEAPI int WINAPI GdiplusStartup(ULONG_PTR*, const void*, void*);
-    WINBASEAPI int WINAPI GdipCreateBitmapFromStream(IStream*, GpBitmap**);
-    WINBASEAPI int WINAPI GdipCreateFromHDC(HDC, GpGraphics**);
-    WINBASEAPI int WINAPI GdipDrawImageRectI(GpGraphics*, GpImage*, int, int, int, int);
-    WINBASEAPI int WINAPI GdipDeleteGraphics(GpGraphics*);
-    WINBASEAPI int WINAPI GdipDisposeImage(GpImage*);
-#ifdef __cplusplus
-}
-#endif
+// --- 手动声明 GDI+ C 接口 ---
+typedef void GpBitmap;
+typedef void GpImage;
+typedef void GpGraphics;
+typedef struct { UINT32 v; PVOID p1; BOOL b1, b2; } Gsi;
+
+extern __declspec(dllimport) int WINAPI GdiplusStartup(ULONG_PTR*, Gsi*, void*);
+extern __declspec(dllimport) int WINAPI GdipCreateBitmapFromStream(IStream*, GpBitmap**);
+extern __declspec(dllimport) int WINAPI GdipCreateFromHDC(HDC, GpGraphics**);
+extern __declspec(dllimport) int WINAPI GdipDrawImageRectI(GpGraphics*, GpImage*, int, int, int, int);
+extern __declspec(dllimport) int WINAPI GdipDeleteGraphics(GpGraphics*);
+extern __declspec(dllimport) int WINAPI GdipDisposeImage(GpImage*);
 
 SOCKET g_sock;
 struct sockaddr_in g_srv;
@@ -65,11 +63,11 @@ LRESULT CALLBACK MainWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         Ellipse(hdc, 10, 10, 22, 22); DeleteObject(br);
         EndPaint(h, &ps); return 0;
     }
-    if (m == WM_LBUTTONDOWN) {
+    if (m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN) {
         RECT rc; GetClientRect(h, &rc);
         int rx = (LOWORD(l) * GetSystemMetrics(SM_CXSCREEN)) / rc.right;
         int ry = (HIWORD(l) * GetSystemMetrics(SM_CYSCREEN)) / rc.bottom;
-        P2PPacket p = { AUTH_MAGIC, 1, 0, rx, ry };
+        P2PPacket p = { AUTH_MAGIC, (m == WM_LBUTTONDOWN ? 1 : 3), 0, rx, ry };
         sendto(g_sock, (char*)&p, sizeof(p), 0, (struct sockaddr*)&g_srv, sizeof(g_srv));
     }
     if (m == WM_DESTROY) { PostQuitMessage(0); }
@@ -89,14 +87,15 @@ INT_PTR CALLBACK DlgProc(HWND h, UINT m, WPARAM w, LPARAM l) {
 
 int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     WSADATA wsa; WSAStartup(0x0202, &wsa);
-    struct { UINT32 v; PVOID p1; BOOL b1, b2; } gsi = {1, NULL, FALSE, FALSE};
+    Gsi gsi = {1, NULL, FALSE, FALSE};
     GdiplusStartup(&g_gdiToken, &gsi, NULL);
     if (DialogBoxParamA(hI, MAKEINTRESOURCEA(IDD_LOGIN), NULL, DlgProc, 0) != IDOK) return 0;
     g_sock = socket(AF_INET, SOCK_DGRAM, 0);
     WNDCLASSW wc = {0}; wc.lpfnWndProc = MainWndProc; wc.hInstance = hI; wc.lpszClassName = L"P2PView";
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH); wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassW(&wc);
-    g_mainWnd = CreateWindowW(L"P2PView", L"Control", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 854, 480, 0, 0, hI, 0);
+    // 默认窗口比例设为常见 16:9
+    g_mainWnd = CreateWindowW(L"P2PView", L"Control", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 960, 540, 0, 0, hI, 0);
     CreateThread(NULL, 0, RecvThread, NULL, 0, NULL);
     MSG msg; while (GetMessage(&msg, NULL, 0, 0)) { TranslateMessage(&msg); DispatchMessage(&msg); }
     return 0;
