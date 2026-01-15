@@ -1,122 +1,177 @@
 #include "p2p_config.h"
 
-NOTIFYICONDATAW nid = { 0 };
+// --- 全局变量 ---
+SOCKET g_srvSock;
+struct sockaddr_in g_clientAddr;
+BOOL g_hasClient = FALSE;
+NOTIFYICONDATAW g_nid = { 0 };
 
-// 托盘回调与菜单处理
-LRESULT CALLBACK TrayProc(HWND hWnd, UINT m, WPARAM w, LPARAM l) {
-    // 1. 处理右键点击托盘图标
-    if (m == WM_USER + 1 && l == WM_RBUTTONUP) {
-        POINT p; GetCursorPos(&p);
-        HMENU hMenu = CreatePopupMenu();
-        AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出 Service (Exit)");
-        SetForegroundWindow(hWnd); // 必须调用，否则菜单不消失
-        TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, p.x, p.y, 0, hWnd, NULL);
-        DestroyMenu(hMenu);
-    } 
-    // 2. 处理菜单点击 "退出"
-    else if (m == WM_COMMAND && LOWORD(w) == ID_TRAY_EXIT) {
-        Shell_NotifyIconW(NIM_DELETE, &nid);
-        exit(0);
-    }
-    return DefWindowProc(hWnd, m, w, l);
-}
-
-// 获取 IP (STUN + 局域网)
-void GetIPs(char* loc, char* pub) {
-    // 局域网
-    char name[255]; gethostname(name, 255);
-    struct hostent* he = gethostbyname(name);
-    if (he) {
-        for (int i=0; he->h_addr_list[i]; i++) { 
-            strcat(loc, inet_ntoa(*(struct in_addr*)he->h_addr_list[i])); 
-            strcat(loc, "  "); 
-        }
-    }
-    
-    // STUN 获取公网
+// --- 1. STUN 公网探测逻辑 (使用您指定的 9 个服务器) ---
+void GetPublicIP(char* outIP) {
+    strcpy(outIP, "探测中...");
     SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
-    int to = 1500; setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&to, sizeof(to));
-    for(int i=0; i<STUN_COUNT; i++) {
-        char h[64]; int p; sscanf(STUN_SERVERS[i], "%[^:]:%d", h, &p);
-        struct hostent* he2 = gethostbyname(h); if(!he2) continue;
-        struct sockaddr_in sa = { AF_INET, htons(p) }; 
-        memcpy(&sa.sin_addr, he2->h_addr, he2->h_length);
+    int timeout = 800; 
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
+
+    for (int i = 0; i < STUN_COUNT; i++) {
+        char host[64]; int port;
+        if (sscanf(STUN_SERVERS[i], "%[^:]:%d", host, &port) != 2) continue;
+
+        struct hostent* he = gethostbyname(host);
+        if (!he) continue;
+
+        struct sockaddr_in sa = { AF_INET, htons(port) };
+        memcpy(&sa.sin_addr, he->h_addr, he->h_length);
+
+        // 构造 STUN Binding Request
+        unsigned char req[20] = { 0 };
+        *(unsigned short*)req = htons(0x0001); // Message Type
+        *(unsigned int*)(req + 4) = htonl(0x2112A442); // Magic Cookie
         
-        StunHeader req = { htons(0x0001), 0, htonl(0x2112A442) };
-        sendto(s, (char*)&req, sizeof(req), 0, (struct sockaddr*)&sa, sizeof(sa));
-        
-        char buf[512]; struct sockaddr_in f; int fl = sizeof(f);
-        if(recvfrom(s, buf, 512, 0, (struct sockaddr*)&f, &fl) > 20) {
-            unsigned char* ptr = (unsigned char*)buf + 20;
-            while(ptr < (unsigned char*)buf + 512) {
-                if(ntohs(*(unsigned short*)ptr) == 0x0020) { // XOR-MAPPED-ADDRESS
-                    unsigned int xip = *(unsigned int*)(ptr+8) ^ htonl(0x2112A442);
-                    struct in_addr in; in.S_un.S_addr = xip;
-                    strcpy(pub, inet_ntoa(in)); closesocket(s); return;
+        sendto(s, (char*)req, 20, 0, (struct sockaddr*)&sa, sizeof(sa));
+
+        unsigned char buf[512];
+        struct sockaddr_in from; int len = sizeof(from);
+        if (recvfrom(s, (char*)buf, 512, 0, (struct sockaddr*)&from, &len) > 20) {
+            // 解析 XOR-MAPPED-ADDRESS (简化的偏移量查找)
+            for (int j = 20; j < 510; j++) {
+                if (buf[j] == 0x00 && buf[j+1] == 0x20) { // XOR-MAPPED-ADDRESS Type
+                    unsigned int xip = *(unsigned int*)(buf + j + 8) ^ htonl(0x2112A442);
+                    struct in_addr addr; addr.S_un.S_addr = xip;
+                    strcpy(outIP, inet_ntoa(addr));
+                    closesocket(s); return;
                 }
-                ptr += (4 + ntohs(*(unsigned short*)(ptr+2)));
             }
         }
     }
-    strcpy(pub, "探测失败"); closesocket(s);
+    strcpy(outIP, "探测失败(请检查网络)");
+    closesocket(s);
 }
 
-// 局域网广播应答
-DWORD WINAPI LanResp(LPVOID lp) {
-    SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in a = { AF_INET, htons(LAN_PORT), INADDR_ANY };
-    bind(s, (struct sockaddr*)&a, sizeof(a));
-    char b[64]; struct sockaddr_in c; int cl = sizeof(c);
-    while(1) if(recvfrom(s, b, 64, 0, (struct sockaddr*)&c, &cl) > 0) sendto(s, "ACK", 3, 0, (struct sockaddr*)&c, cl);
-}
-
-int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
-    WSADATA w; WSAStartup(0x0202, &w);
+// --- 2. 屏幕抓取与分片发送线程 ---
+DWORD WINAPI ScreenThread(LPVOID lp) {
+    int w = GetSystemMetrics(SM_CXSCREEN);
+    int h = GetSystemMetrics(SM_CYSCREEN);
     
-    // 1. 初始化托盘 (如果开启)
-    if (ENABLE_TRAY) {
-        WNDCLASSW wc = {0}; wc.lpfnWndProc = TrayProc; wc.hInstance = hI; wc.lpszClassName = L"TrayV";
-        RegisterClassW(&wc); 
-        HWND hw = CreateWindowW(L"TrayV", NULL, 0,0,0,0,0,0,0,hI,0);
-        
-        nid.cbSize = sizeof(nid); nid.hWnd = hw; nid.uID = 1; 
-        nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP; 
-        nid.uCallbackMessage = WM_USER+1;
-        nid.hIcon = LoadIcon(NULL, IDI_APPLICATION); 
-        wcscpy(nid.szTip, L"P2P Service (右键退出)");
-        Shell_NotifyIconW(NIM_ADD, &nid);
-    }
+    HDC hdcScr = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScr);
+    HBITMAP hBmp = CreateCompatibleBitmap(hdcScr, w, h);
+    SelectObject(hdcMem, hBmp);
 
-    // 2. 弹窗显示 IP
-    char lIP[256]="", pIP[32]=""; GetIPs(lIP, pIP);
-    wchar_t info[512]; swprintf(info, 512, L"服务端启动\n\n局域网: %S\n公网: %S\n\n(托盘已最小化)", lIP, pIP);
-    MessageBoxW(NULL, info, L"Service Info", MB_OK);
+    BITMAPINFO bmi = { 0 };
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = w;
+    bmi.bmiHeader.biHeight = -h; // Top-Down
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
 
-    CreateThread(NULL, 0, LanResp, NULL, 0, NULL);
+    int imgSize = w * h * 4;
+    unsigned char* rawData = (unsigned char*)malloc(imgSize);
 
-    SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
-    struct sockaddr_in ad = { AF_INET, htons(P2P_PORT), INADDR_ANY };
-    bind(s, (struct sockaddr*)&ad, sizeof(ad));
+    while (1) {
+        if (!g_hasClient) { Sleep(500); continue; }
 
-    P2PPacket pkt; struct sockaddr_in f; int fl = sizeof(f); 
-    MSG msg;
+        // 截图
+        BitBlt(hdcMem, 0, 0, w, h, hdcScr, 0, 0, SRCCOPY);
+        GetDIBits(hdcMem, hBmp, 0, h, rawData, &bmi, DIB_RGB_COLORS);
 
-    // 3. 主循环: 必须同时处理 网络IO 和 窗口消息(托盘)
-    while(1) {
-        // 处理所有挂起的窗口消息 (确保托盘右键能响应)
-        while(PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
+        // 分片发送 (切成 CHUNK_SIZE 的小包)
+        for (int i = 0; i < imgSize; i += CHUNK_SIZE) {
+            P2PPacket pkt;
+            pkt.magic = AUTH_MAGIC;
+            pkt.type = 2; // 屏幕数据
+            pkt.x = i;    // 偏移量
+            pkt.slice_size = (imgSize - i < CHUNK_SIZE) ? (imgSize - i) : CHUNK_SIZE;
+            memcpy(pkt.data, rawData + i, pkt.slice_size);
+
+            sendto(g_srvSock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&g_clientAddr, sizeof(g_clientAddr));
+            
+            // 网络风暴控制：每发 32 个包微休眠一下，防止 UDP 丢包太严重
+            if ((i / CHUNK_SIZE) % 32 == 0) Sleep(1);
         }
+        Sleep(50); // 控制帧率在大约 15-20 FPS
+    }
+    return 0;
+}
 
-        fd_set r; FD_ZERO(&r); FD_SET(s, &r); 
-        struct timeval tv = {0, 10000}; // 10ms Select 超时
-        
-        if(select(0, &r, 0, 0, &tv) > 0) {
-            if(recvfrom(s, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&f, &fl) > 0) {
-                if(pkt.magic == AUTH_MAGIC) {
-                    SetCursorPos(pkt.x, pkt.y);
-                    if(pkt.type == 2) mouse_event(MOUSEEVENTF_LEFTDOWN|MOUSEEVENTF_LEFTUP,0,0,0,0);
+// --- 3. 托盘消息处理 ---
+LRESULT CALLBACK TrayProc(HWND hWnd, UINT m, WPARAM w, LPARAM l) {
+#if ENABLE_TRAY
+    if (m == WM_TRAY_MSG && l == WM_RBUTTONUP) {
+        POINT p; GetCursorPos(&p);
+        HMENU hMenu = CreatePopupMenu();
+        AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出服务端 (Exit)");
+        SetForegroundWindow(hWnd);
+        TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, p.x, p.y, 0, hWnd, NULL);
+        DestroyMenu(hMenu);
+    } else if (m == WM_COMMAND && LOWORD(w) == ID_TRAY_EXIT) {
+        Shell_NotifyIconW(NIM_DELETE, &g_nid);
+        ExitProcess(0);
+    }
+#endif
+    return DefWindowProc(hWnd, m, w, l);
+}
+
+// --- 4. 程序入口 ---
+int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
+    WSADATA wsa; WSAStartup(0x0202, &wsa);
+
+    // 获取并显示 IP 状态
+    char locIP[128] = "", pubIP[64] = "";
+    char name[255]; gethostname(name, 255);
+    struct hostent* he = gethostbyname(name);
+    if (he) {
+        for(int i=0; he->h_addr_list[i]; i++) {
+            strcat(locIP, inet_ntoa(*(struct in_addr*)he->h_addr_list[i]));
+            strcat(locIP, " ");
+        }
+    }
+    GetPublicIP(pubIP);
+
+    wchar_t info[512];
+    swprintf(info, 512, L"服务端已启动\n局域网IP: %S\n公网IP: %S\n\n请在控制端输入上述 IP 即可连接。", locIP, pubIP);
+    MessageBoxW(NULL, info, L"P2P Service Info", MB_OK | MB_ICONINFORMATION);
+
+    // 托盘初始化
+    WNDCLASSW wc = { 0 }; wc.lpfnWndProc = TrayProc; wc.hInstance = hI; wc.lpszClassName = L"SrvTray";
+    RegisterClassW(&wc); HWND hw = CreateWindowW(L"SrvTray", NULL, 0, 0, 0, 0, 0, 0, 0, hI, 0);
+
+#if ENABLE_TRAY
+    g_nid.cbSize = sizeof(g_nid); g_nid.hWnd = hw; g_nid.uID = 1;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP; g_nid.uCallbackMessage = WM_TRAY_MSG;
+    g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wcscpy(g_nid.szTip, L"P2P Service 正在运行");
+    Shell_NotifyIconW(NIM_ADD, &g_nid);
+#endif
+
+    // 初始化网络
+    g_srvSock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in ad = { AF_INET, htons(P2P_PORT), INADDR_ANY };
+    bind(g_srvSock, (struct sockaddr*)&ad, sizeof(ad));
+
+    // 开启屏幕发送线程
+    CreateThread(NULL, 0, ScreenThread, NULL, 0, NULL);
+
+    P2PPacket pkt;
+    struct sockaddr_in from; int fl = sizeof(from);
+    while (1) {
+        MSG msg;
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) DispatchMessage(&msg);
+
+        // 接收控制端指令
+        fd_set r; FD_ZERO(&r); FD_SET(g_srvSock, &r);
+        struct timeval tv = { 0, 10000 };
+        if (select(0, &r, 0, 0, &tv) > 0) {
+            if (recvfrom(g_srvSock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&from, &fl) > 0) {
+                if (pkt.magic == AUTH_MAGIC) {
+                    // 一旦收到控制端任何包，就开始向其发送屏幕
+                    g_clientAddr = from;
+                    g_hasClient = TRUE;
+
+                    if (pkt.type == 1) { // 鼠标指令
+                        SetCursorPos(pkt.x, pkt.y);
+                        mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+                    }
                 }
             }
         }
