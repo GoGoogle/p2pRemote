@@ -8,7 +8,8 @@ NOTIFYICONDATAW g_nid = {0};
 int g_scrW = 1920, g_scrH = 1080; 
 
 DWORD WINAPI RecvThread(LPVOID lp) {
-    VideoCodec_InitReceiver(); // 修复调用参数
+    // 修复：传入 g_sock 和 g_srv 满足新定义的 2 个参数要求
+    VideoCodec_InitReceiver(g_sock, &g_srv); 
     P2PPacket pkt; struct sockaddr_in f; int fl = sizeof(f);
     while(1) {
         int r = recvfrom(g_sock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&f, &fl);
