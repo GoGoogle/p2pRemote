@@ -1,94 +1,79 @@
 #include "video_codec.h"
 
-// 服务端缓存
-static unsigned char* s_currFrame = NULL;
-static unsigned char* s_lastFrame = NULL;
-static unsigned char* s_compBuf = NULL; // 压缩缓冲区
-static int s_width = 0, s_height = 0;
-static HDC s_hdcMem = NULL;
-static HBITMAP s_hBmp = NULL;
+static SOCKET s_tcpSock = INVALID_SOCKET;
+static SOCKET s_listenSock = INVALID_SOCKET;
+static unsigned char* s_frameBuf = NULL;
+static int s_w = 0, s_h = 0;
 
-// 客户端缓存
-static unsigned char* s_recvBuf = NULL;
-static const int MAX_BUF_SIZE = 3840 * 2160 * 4;
+// --- 服务端逻辑 ---
+void VideoCodec_InitSender(int w, int h, SOCKET udpSock) {
+    s_w = w; s_h = h;
+    s_frameBuf = (unsigned char*)malloc(w * h * 4);
 
-void VideoCodec_InitSender(int w, int h) {
-    s_width = w; s_height = h;
-    HDC hdcScr = GetDC(NULL);
-    s_hdcMem = CreateCompatibleDC(hdcScr);
-    s_hBmp = CreateCompatibleBitmap(hdcScr, w, h);
-    SelectObject(s_hdcMem, s_hBmp);
+    // 建立一个 TCP 监听，端口设为 P2P_PORT + 1
+    s_listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    struct sockaddr_in ad = { AF_INET, htons(P2P_PORT + 1), INADDR_ANY };
+    bind(s_listenSock, (struct sockaddr*)&ad, sizeof(ad));
+    listen(s_listenSock, 1);
     
-    int size = w * h * 4;
-    s_currFrame = (unsigned char*)malloc(size);
-    s_lastFrame = (unsigned char*)malloc(size);
-    s_compBuf = (unsigned char*)malloc(size + 1024);
-    memset(s_lastFrame, 0, size);
-    ReleaseDC(NULL, hdcScr);
+    // 异步等待连接，不阻塞主线程
+    unsigned long mode = 1; ioctlsocket(s_listenSock, FIONBIO, &mode);
 }
 
-// 极简压缩算法：只处理连续重复像素 (RLE 轻量版)
-// 协议定义：pkt.type = 2 为原始/差异数据；新增 pkt.type = 6 为压缩数据
-void VideoCodec_CaptureAndSend(SOCKET s, struct sockaddr_in* dest) {
+void VideoCodec_CaptureAndSend(SOCKET udpSock, struct sockaddr_in* dest) {
+    if (s_tcpSock == INVALID_SOCKET) {
+        struct sockaddr_in client; int len = sizeof(client);
+        s_tcpSock = accept(s_listenSock, (struct sockaddr*)&client, &len);
+        if (s_tcpSock == INVALID_SOCKET) return; // 还没连上
+    }
+
+    HDC hdcScr = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScr);
+    HBITMAP hBmp = CreateCompatibleBitmap(hdcScr, s_w, s_h);
+    SelectObject(hdcMem, hBmp);
+    BitBlt(hdcMem, 0, 0, s_w, s_h, hdcScr, 0, 0, SRCCOPY);
+
     BITMAPINFO bmi = {0};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = s_width;
-    bmi.bmiHeader.biHeight = -s_height;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biWidth = s_w; bmi.bmiHeader.biHeight = -s_h;
+    bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32;
 
-    HDC hdcScr = GetDC(NULL);
-    BitBlt(s_hdcMem, 0, 0, s_width, s_height, hdcScr, 0, 0, SRCCOPY);
-    GetDIBits(s_hdcMem, s_hBmp, 0, s_height, s_currFrame, &bmi, DIB_RGB_COLORS);
-    ReleaseDC(NULL, hdcScr);
+    GetDIBits(hdcMem, hBmp, 0, s_h, s_frameBuf, &bmi, DIB_RGB_COLORS);
 
-    int imgSize = s_width * s_height * 4;
-    int rowSize = s_width * 4;
+    // TCP 发送：先发大小，再发数据（TCP 会自动处理分片和重传）
+    int total = s_w * s_h * 4;
+    send(s_tcpSock, (char*)s_frameBuf, total, 0);
 
-    for (int y = 0; y < s_height; y++) {
-        int offset = y * rowSize;
-        
-        // 1. 行级对比：如果整行没变，直接跳过
-        if (memcmp(s_currFrame + offset, s_lastFrame + offset, rowSize) == 0) {
-            continue;
-        }
-
-        // 2. 更新缓存并发送变化的行
-        memcpy(s_lastFrame + offset, s_currFrame + offset, rowSize);
-
-        // 3. 将这一行切片发送
-        for (int x = 0; x < rowSize; x += CHUNK_SIZE) {
-            int sendSize = (rowSize - x < CHUNK_SIZE) ? (rowSize - x) : CHUNK_SIZE;
-            P2PPacket pkt = { AUTH_MAGIC, 2, offset + x, imgSize };
-            pkt.slice_size = sendSize;
-            memcpy(pkt.data, s_currFrame + offset + x, sendSize);
-            sendto(s, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)dest, sizeof(*dest));
-        }
-    }
+    DeleteObject(hBmp); DeleteDC(hdcMem); ReleaseDC(NULL, hdcScr);
 }
 
-void VideoCodec_InitReceiver() {
-    if (!s_recvBuf) {
-        s_recvBuf = (unsigned char*)malloc(MAX_BUF_SIZE);
-        memset(s_recvBuf, 0, MAX_BUF_SIZE);
-    }
-}
-
-void VideoCodec_HandlePacket(P2PPacket* pkt) {
-    if (pkt->x + pkt->slice_size <= MAX_BUF_SIZE) {
-        memcpy(s_recvBuf + pkt->x, pkt->data, pkt->slice_size);
-    }
+// --- 客户端逻辑 ---
+void VideoCodec_InitReceiver(SOCKET udpSock, struct sockaddr_in* srvAddr) {
+    s_frameBuf = (unsigned char*)malloc(3840 * 2160 * 4);
+    
+    s_tcpSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    struct sockaddr_in ad = *srvAddr;
+    ad.sin_port = htons(P2P_PORT + 1); // 画面走新端口
+    
+    connect(s_tcpSock, (struct sockaddr*)&ad, sizeof(ad));
 }
 
 void VideoCodec_Render(HDC hdc, HWND hwnd, int screenW, int screenH) {
-    if (!s_recvBuf) return;
+    int total = screenW * screenH * 4;
+    int received = 0;
+    
+    // TCP 接收：循环直到收满一整帧，保证画面永远不花
+    while (received < total) {
+        int r = recv(s_tcpSock, (char*)s_frameBuf + received, total - received, 0);
+        if (r <= 0) break;
+        received += r;
+    }
+
     BITMAPINFO bmi = {0};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = screenW;
-    bmi.bmiHeader.biHeight = -screenH;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biWidth = screenW; bmi.bmiHeader.biHeight = -screenH;
+    bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32;
 
     RECT rc; GetClientRect(hwnd, &rc);
-    StretchDIBits(hdc, 0, 0, rc.right, rc.bottom, 0, 0, screenW, screenH, s_recvBuf, &bmi, DIB_RGB_COLORS, SRCCOPY);
+    StretchDIBits(hdc, 0, 0, rc.right, rc.bottom, 0, 0, screenW, screenH, s_frameBuf, &bmi, DIB_RGB_COLORS, SRCCOPY);
 }
