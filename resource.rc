@@ -1,14 +1,15 @@
+#pragma code_page(65001) // 强制使用 UTF-8
 #include "p2p_config.h"
 #include <windows.h>
 
-// 定义登录对话框
-IDD_LOGIN DIALOGEX 0, 0, 160, 70
+IDD_LOGIN DIALOGEX 0, 0, 170, 80
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Gemini P2P 控制端"
-FONT 9, "MS Shell Dlg"
+CAPTION "Gemini P2P Pro"
+FONT 9, "Microsoft YaHei" // 使用微软雅黑防止乱码
 BEGIN
-    LTEXT           "请输入目标服务器 IP 地址:", -1, 10, 10, 140, 8
-    EDITTEXT        IDC_EDIT_ID, 10, 25, 140, 14, ES_AUTOHSCROLL
-    DEFPUSHBUTTON   "开始连接", IDOK, 35, 48, 40, 14
-    PUSHBUTTON      "退出", IDCANCEL, 85, 48, 40, 14
+    LTEXT           "请输入被控端 IP 地址:", -1, 10, 10, 150, 8
+    EDITTEXT        IDC_EDIT_ID, 10, 25, 150, 14, ES_AUTOHSCROLL
+    LTEXT           "状态: 准备就绪", IDC_STATUS_TEXT, 10, 42, 150, 8
+    DEFPUSHBUTTON   "开始连接", IDOK, 40, 60, 40, 14
+    PUSHBUTTON      "退出", IDCANCEL, 90, 60, 40, 14
 END
