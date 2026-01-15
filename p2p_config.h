@@ -6,7 +6,6 @@
 #include <commctrl.h>
 #include <shellapi.h>
 #include <stdio.h>
-#include <ws2tcpip.h>
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "user32.lib")
@@ -14,48 +13,40 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "comctl32.lib")
 
-// --- 配置开关 ---
-#define ENABLE_TRAY   1
-
-// --- 资源 ID 严格定义 ---
 #define IDD_LOGIN     101
 #define IDC_EDIT_ID   1001
-#define IDC_STATUS    1002
 #define ID_TRAY_EXIT  2001
+#define WM_TRAY_MSG   (WM_USER + 2)
 
-// --- 您要求的 9 个 STUN 服务器 ---
+// STUN 列表 (已按要求更新)
 static const char* STUN_SERVERS[] = {
-    "stun.qq.com:3478",
-    "stun.aliyun.com:3478",
-    "stun.huawei.com:3478",
-    "stun.cloudflare.com:3478",
-    "stun.l.google.com:19302",
-    "stun1.l.google.com:19302",
-    "stun2.l.google.com:19302",
-    "stun3.l.google.com:19302",
-    "stun4.l.google.com:19302"
+    "stun.qq.com:3478", "stun.aliyun.com:3478", "stun.huawei.com:3478",
+    "stun.cloudflare.com:3478", "stun.l.google.com:19302", "stun1.l.google.com:19302",
+    "stun2.l.google.com:19302", "stun3.l.google.com:19302", "stun4.l.google.com:19302"
 };
-#define STUN_COUNT 9
 
 #define P2P_PORT      9000
-#define LAN_PORT      8888
 #define AUTH_MAGIC    0xABCDEF12
+
+// 数据包类型
+#define PKT_CMD       1
+#define PKT_SCREEN    2
 
 #pragma pack(push, 1)
 typedef struct {
-    unsigned short type; unsigned short length; 
-    unsigned int magic; unsigned char id[12];
-} StunHeader;
-#pragma pack(pop)
+    unsigned int magic;
+    int type; // PKT_CMD
+    int cmd;  // 1:移动+左击
+    int x, y;
+} CommandPacket;
 
 typedef struct {
     unsigned int magic;
-    int type; // 1:移动, 2:点击
-    int x, y;
-} P2PPacket;
-
-#define CLR_LAN       RGB(0, 255, 255)
-#define CLR_WAN       RGB(0, 255, 0)
-#define CLR_TRY       RGB(255, 255, 0)
+    int type; // PKT_SCREEN
+    int offset;
+    int size;
+    unsigned char data[1024]; // 简单分片发送
+} ScreenPacket;
+#pragma pack(pop)
 
 #endif
