@@ -26,8 +26,8 @@ jobs:
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           rc.exe resource.rc
-          cl.exe /O1 /MT /utf-8 client.c resource.res /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib shell32.lib comctl32.lib /OUT:Control.exe
-          cl.exe /O1 /MT /utf-8 server.c /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib shell32.lib comctl32.lib /OUT:Service.exe
+          cl.exe /O1 /MT /utf-8 client.c video_codec.c resource.res /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib shell32.lib comctl32.lib /OUT:Control.exe
+          cl.exe /O1 /MT /utf-8 server.c video_codec.c /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib shell32.lib comctl32.lib /OUT:Service.exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
