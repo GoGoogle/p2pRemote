@@ -1,6 +1,6 @@
 #include "p2p_config.h"
 
-// --- 手动定义 GDI+ 类型和 C 平面接口声明 (避开 C++ 冲突) ---
+// --- GDI+ 纯 C 接口声明 (手动声明以解决 cl.exe 编译报错) ---
 typedef void GpBitmap;
 typedef void GpImage;
 typedef struct { UINT32 v; PVOID p1; BOOL b1, b2; } Gsi;
@@ -34,8 +34,23 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     free(pIci); return -1;
 }
 
-void GetPublicIP(char* outIP) {
-    strcpy(outIP, "Detecting...");
+// 获取内网和公网 IP
+void GetIPInfo(char* localIP, char* publicIP) {
+    strcpy(publicIP, "未探测到");
+    strcpy(localIP, "127.0.0.1");
+    
+    // 获取内网 IP
+    char hostName[256];
+    if (gethostname(hostName, sizeof(hostName)) == 0) {
+        struct hostent* pHost = gethostbyname(hostName);
+        if (pHost) {
+            struct in_addr addr;
+            memcpy(&addr, pHost->h_addr_list[0], sizeof(struct in_addr));
+            strcpy(localIP, inet_ntoa(addr));
+        }
+    }
+
+    // STUN 探测公网 IP
     SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
     int timeout = 1000;
     setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof(timeout));
@@ -45,7 +60,7 @@ void GetPublicIP(char* outIP) {
         struct hostent* he = gethostbyname(host);
         if (!he) continue;
         struct sockaddr_in sa = { AF_INET, htons(port), *((struct in_addr*)he->h_addr) };
-        unsigned char req[20] = { 0 };
+        unsigned char req[20] = {0};
         *(unsigned short*)req = htons(0x0001);
         *(unsigned int*)(req + 4) = htonl(0x2112A442);
         sendto(s, (char*)req, 20, 0, (struct sockaddr*)&sa, sizeof(sa));
@@ -53,10 +68,10 @@ void GetPublicIP(char* outIP) {
         struct sockaddr_in from; int len = sizeof(from);
         if (recvfrom(s, (char*)buf, 512, 0, (struct sockaddr*)&from, &len) > 20) {
             for (int j = 20; j < 500; j++) {
-                if (buf[j] == 0x00 && buf[j+1] == 0x20) {
-                    unsigned int xip = *(unsigned int*)(buf + j + 8) ^ htonl(0x2112A442);
+                if (buf[j] == 0x00 && buf[j+1] == 0x01) { // MAPPED-ADDRESS
+                    unsigned int xip = *(unsigned int*)(buf + j + 8);
                     struct in_addr addr; addr.S_un.S_addr = xip;
-                    strcpy(outIP, inet_ntoa(addr));
+                    strcpy(publicIP, inet_ntoa(addr));
                     closesocket(s); return;
                 }
             }
@@ -98,11 +113,12 @@ DWORD WINAPI ScreenThread(LPVOID lp) {
     return 0;
 }
 
-LRESULT CALLBACK TrayProc(HWND hWnd, UINT m, WPARAM w, LPARAM l) {
+LRESULT CALLBACK SrvWndProc(HWND hWnd, UINT m, WPARAM w, LPARAM l) {
     if (m == WM_TRAY_MSG && l == WM_RBUTTONUP) {
         POINT p; GetCursorPos(&p); HMENU hMenu = CreatePopupMenu();
         AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出服务端");
-        SetForegroundWindow(hWnd); TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, p.x, p.y, 0, hWnd, NULL);
+        SetForegroundWindow(hWnd);
+        TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, p.x, p.y, 0, hWnd, NULL);
         DestroyMenu(hMenu);
     } else if (m == WM_COMMAND && LOWORD(w) == ID_TRAY_EXIT) {
         Shell_NotifyIconW(NIM_DELETE, &g_nid); ExitProcess(0);
@@ -114,19 +130,26 @@ int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     WSADATA wsa; WSAStartup(0x0202, &wsa);
     Gsi gsi = {1, NULL, FALSE, FALSE};
     GdiplusStartup(&g_gdiToken, &gsi, NULL);
-    char pubIP[64]; GetPublicIP(pubIP);
-    wchar_t info[128]; swprintf(info, 128, L"服务端就绪\n公网IP: %S", pubIP);
+    
+    char localIP[64], publicIP[64];
+    GetIPInfo(localIP, publicIP);
+    wchar_t info[256];
+    swprintf(info, 256, L"服务端启动成功\n内网: %S\n公网: %S", localIP, publicIP);
     MessageBoxW(NULL, info, L"Service", MB_OK);
-    WNDCLASSW wc = { 0 }; wc.lpfnWndProc = TrayProc; wc.hInstance = hI; wc.lpszClassName = L"SrvTray";
-    RegisterClassW(&wc); HWND hw = CreateWindowW(L"SrvTray", NULL, 0, 0, 0, 0, 0, 0, 0, hI, 0);
-#if ENABLE_TRAY
-    g_nid.cbSize = sizeof(g_nid); g_nid.hWnd = hw; g_nid.uID = 1; g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    g_nid.uCallbackMessage = WM_TRAY_MSG; g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-    wcscpy(g_nid.szTip, L"P2P Service"); Shell_NotifyIconW(NIM_ADD, &g_nid);
-#endif
+
+    WNDCLASSW wc = {0}; wc.lpfnWndProc = SrvWndProc; wc.hInstance = hI; wc.lpszClassName = L"P2PSrvWnd";
+    RegisterClassW(&wc); HWND hInv = CreateWindowW(L"P2PSrvWnd", NULL, 0, 0, 0, 0, 0, 0, 0, hI, 0);
+
+    g_nid.cbSize = sizeof(g_nid); g_nid.hWnd = hInv; g_nid.uID = 1;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP; g_nid.uCallbackMessage = WM_TRAY_MSG;
+    g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wcscpy(g_nid.szTip, L"P2P Service 运行中");
+    Shell_NotifyIconW(NIM_ADD, &g_nid);
+
     g_srvSock = socket(AF_INET, SOCK_DGRAM, 0);
     struct sockaddr_in ad = { AF_INET, htons(P2P_PORT), INADDR_ANY };
     bind(g_srvSock, (struct sockaddr*)&ad, sizeof(ad));
+
     CreateThread(NULL, 0, ScreenThread, NULL, 0, NULL);
     P2PPacket pkt;
     struct sockaddr_in from; int fl = sizeof(from);
@@ -135,12 +158,10 @@ int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
         if (recvfrom(g_srvSock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&from, &fl) > 0) {
             if (pkt.magic == AUTH_MAGIC) {
                 g_clientAddr = from; g_hasClient = TRUE;
-                if (pkt.type == 1) { // 左键
-                    SetCursorPos(pkt.offset, pkt.total_size); 
-                    mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, 0, 0, 0, 0); 
-                } else if (pkt.type == 3) { // 右键
+                if (pkt.type == 1 || pkt.type == 3) {
                     SetCursorPos(pkt.offset, pkt.total_size);
-                    mouse_event(MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+                    DWORD flags = (pkt.type == 1) ? (MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP) : (MOUSEEVENTF_RIGHTDOWN | MOUSEEVENTF_RIGHTUP);
+                    mouse_event(flags, 0, 0, 0, 0);
                 }
             }
         }
