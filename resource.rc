@@ -9,9 +9,9 @@ STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMEN
 CAPTION "P2P 控制端"
 FONT 9, "Microsoft YaHei"
 BEGIN
-    LTEXT           "请输入目标 IP (局域网自动填入):", -1, 10, 10, 160, 8
+    LTEXT           "请输入目标服务器 IP 地址:", -1, 10, 10, 160, 8
     EDITTEXT        IDC_EDIT_ID, 10, 22, 160, 14, ES_AUTOHSCROLL
-    LTEXT           "状态: 等待操作...", IDC_STATUS, 10, 42, 160, 20
+    LTEXT           "提示：手动输入 IP 后点击开始连接。\n连接后按 ESC 退出控制状态。", IDC_STATUS, 10, 42, 160, 20
     DEFPUSHBUTTON   "开始连接", IDOK, 40, 65, 45, 15
     PUSHBUTTON      "退出", IDCANCEL, 95, 65, 45, 15
 END
