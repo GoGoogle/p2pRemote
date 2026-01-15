@@ -4,12 +4,12 @@
 
 IDD_LOGIN DIALOGEX 0, 0, 180, 85
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Gemini P2P"
+CAPTION "Gemini P2P 控制端"
 FONT 9, "Microsoft YaHei"
 BEGIN
-    LTEXT           "请输入目标外网或局域网 IP:", -1, 10, 10, 160, 8
+    LTEXT           "请输入目标 IP (局域网或公网):", -1, 10, 10, 160, 8
     EDITTEXT        IDC_EDIT_ID, 10, 22, 160, 14, ES_AUTOHSCROLL
-    LTEXT           "状态: 等待连接", IDC_STATUS, 10, 42, 160, 8
-    DEFPUSHBUTTON   "开始控制", IDOK, 45, 62, 40, 14
+    LTEXT           "提示: 连接后按 ESC 退出控制", IDC_STATUS, 10, 42, 160, 8
+    DEFPUSHBUTTON   "开始连接", IDOK, 45, 62, 40, 14
     PUSHBUTTON      "退出", IDCANCEL, 95, 62, 40, 14
 END
