@@ -10,17 +10,17 @@
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "gdi32.lib")
 
-// --- 调试配置开关 ---
-#define ENABLE_TRAY   1       // 设置为 1 开启托盘退出选项，设置为 0 则完全静默后台
+// --- 调试配置 ---
+#define ENABLE_TRAY   1       // 1: 显示托盘图标, 0: 完全隐藏
 
-// --- 资源 ID 定义 ---
+// --- 资源 ID (务必与 rc 文件严格对应) ---
 #define IDD_LOGIN     101
 #define IDC_EDIT_ID   1001
-#define IDC_STATUS    1002
-#define ID_TRAY_EXIT  2001    // 托盘退出菜单 ID
+#define ID_TRAY_EXIT  2001
 
-// --- 完整的 STUN 服务器列表 (按照您的要求排序) ---
+// --- 按照您的要求配置的 9 个 STUN 地址 ---
 static const char* STUN_SERVERS[] = {
     "stun.qq.com:3478",
     "stun.aliyun.com:3478",
