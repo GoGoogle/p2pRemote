@@ -1,53 +1,38 @@
 #include "p2p_config.h"
 
-COLORREF g_clr = CLR_TRY;
-struct sockaddr_in g_target;
-SOCKET g_sock;
-char g_input_target[64] = {0};
+struct sockaddr_in g_client;
+SOCKET g_srv_sock;
 
-void DrawDot() {
-    HDC h = GetDC(NULL); POINT p; GetCursorPos(&p);
-    HBRUSH b = CreateSolidBrush(g_clr); SelectObject(h, b);
-    Ellipse(h, p.x+15, p.y+15, p.x+23, p.y+23);
-    DeleteObject(b); ReleaseDC(NULL, h);
-}
-
-void Probe(char* target) {
-    struct hostent* he = gethostbyname(target);
-    if(he) {
-        g_target.sin_family = AF_INET;
-        g_target.sin_port = htons(P2P_PORT);
-        memcpy(&g_target.sin_addr, he->h_addr, he->h_length);
-        g_clr = CLR_WAN;
-    } else g_clr = CLR_ERR;
-}
-
-INT_PTR CALLBACK DlgProc(HWND h, UINT m, WPARAM w, LPARAM l) {
-    if(m == WM_COMMAND) {
-        if(LOWORD(w) == IDOK) {
-            GetDlgItemTextA(h, 101, g_input_target, 64);
-            EndDialog(h, IDOK);
-        } else if(LOWORD(w) == IDCANCEL) EndDialog(h, IDCANCEL);
+DWORD WINAPI LanResp(LPVOID lp) {
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in a = { AF_INET, htons(LAN_PORT), INADDR_ANY };
+    bind(s, (struct sockaddr*)&a, sizeof(a));
+    char b[64]; struct sockaddr_in c; int cl = sizeof(c);
+    while(1) {
+        if(recvfrom(s, b, 64, 0, (struct sockaddr*)&c, &cl) > 0) {
+            sendto(s, "P2P_SRV", 7, 0, (struct sockaddr*)&c, cl);
+            system("tscon 1 /dest:console");
+        }
     }
     return 0;
 }
 
 int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     WSADATA w; WSAStartup(0x0202, &w);
-    if(DialogBoxA(hI, (LPCSTR)MAKEINTRESOURCE(0), NULL, DlgProc) != IDOK) return 0;
+    CreateThread(NULL, 0, LanResp, NULL, 0, NULL);
+    g_srv_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in a = { AF_INET, htons(P2P_PORT), INADDR_ANY };
+    bind(g_srv_sock, (struct sockaddr*)&a, sizeof(a));
 
-    g_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    Probe(g_input_target);
-
+    P2PPacket pkt; int cl = sizeof(g_client);
     while(1) {
-        DrawDot();
-        if(GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
-            POINT p; GetCursorPos(&p);
-            P2PPacket pkt = { AUTH_MAGIC, 2, p.x, p.y };
-            sendto(g_sock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&g_target, sizeof(g_target));
+        if(recvfrom(g_srv_sock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&g_client, &cl) > 0) {
+            if(pkt.magic == AUTH_MAGIC) {
+                if(pkt.type == 2) mouse_event(MOUSEEVENTF_LEFTDOWN|MOUSEEVENTF_LEFTUP,0,0,0,0);
+                if(pkt.type == 1) SetCursorPos(pkt.x, pkt.y);
+            }
         }
-        if(GetAsyncKeyState(VK_ESCAPE)) break;
-        Sleep(20);
+        Sleep(10);
     }
     return 0;
 }
