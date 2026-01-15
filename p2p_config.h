@@ -7,14 +7,16 @@
 #include <shellapi.h>
 #include <stdio.h>
 #include <ws2tcpip.h>
-#include <gdiplus.h> // 必须包含 GDI+
+#include <shlwapi.h>
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "comctl32.lib")
-#pragma comment(lib, "gdiplus.lib") // 引入 GDI+ 库
+#pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "ole32.lib")
 
 #define ENABLE_TRAY   1
 #define IDD_LOGIN     101
@@ -31,16 +33,16 @@ static const char* STUN_SERVERS[] = {
 
 #define P2P_PORT      9000
 #define AUTH_MAGIC    0xABCDEF12
-#define CHUNK_SIZE    1200 // 略微调大包体积，提高传输效率
+#define CHUNK_SIZE    1200 
 
 #pragma pack(push, 1)
 typedef struct {
     unsigned int magic;
-    int type;       // 1: CMD, 2: SCREEN_DATA
-    int frame_id;   // 帧序号，防止乱序
-    int offset;     // 在整帧 JPEG 里的偏移
-    int total_size; // 这一帧 JPEG 的总大小
-    int slice_size; // 本包载荷大小
+    int type;       
+    int frame_id;   
+    int offset;     
+    int total_size; 
+    int slice_size; 
     unsigned char data[CHUNK_SIZE];
 } P2PPacket;
 #pragma pack(pop)
