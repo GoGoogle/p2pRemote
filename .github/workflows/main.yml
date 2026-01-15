@@ -26,11 +26,12 @@ jobs:
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           # 1. 编译资源文件
-          rc.exe resource.rc
+          rc.exe /nologo resource.rc
           # 2. 编译客户端 (链接资源文件 resource.res)
-          cl.exe /O1 /MT /utf-8 client.c resource.res /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib shell32.lib comctl32.lib /OUT:Control.exe
+          cl.exe /nologo /O1 /MT /utf-8 client.c resource.res /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib comctl32.lib /OUT:Control.exe
           # 3. 编译服务端
-          cl.exe /O1 /MT /utf-8 server.c /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib shell32.lib comctl32.lib /OUT:Service.exe
+          #cl.exe /O1 /MT /utf-8 server.c /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib shell32.lib comctl32.lib /OUT:Service.exe
+          cl.exe /nologo /O1 /MT /utf-8 server.c /link /subsystem:windows user32.lib gdi32.lib ws2_32.lib shell32.lib comctl32.lib /OUT:Service.exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
