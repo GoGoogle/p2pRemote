@@ -1,12 +1,14 @@
+#include "p2p_config.h"
 #include <windows.h>
 
-IDD_LOGIN DIALOGEX 0, 0, 150, 60
+// 定义登录对话框
+IDD_LOGIN DIALOGEX 0, 0, 160, 70
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "P2P 远程"
+CAPTION "Gemini P2P 控制端"
 FONT 9, "MS Shell Dlg"
 BEGIN
-    LTEXT           "输入目标 ID 或 IP:", IDC_STATIC, 7, 10, 80, 8
-    EDITTEXT        101, 7, 22, 136, 12, ES_AUTOHSCROLL
-    DEFPUSHBUTTON   "连接", IDOK, 40, 40, 35, 14
-    PUSHBUTTON      "退出", IDCANCEL, 77, 40, 35, 14
+    LTEXT           "请输入目标服务器 IP 地址:", -1, 10, 10, 140, 8
+    EDITTEXT        IDC_EDIT_ID, 10, 25, 140, 14, ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "开始连接", IDOK, 35, 48, 40, 14
+    PUSHBUTTON      "退出", IDCANCEL, 85, 48, 40, 14
 END
