@@ -18,7 +18,6 @@
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ole32.lib")
 
-#define ENABLE_TRAY   1
 #define IDD_LOGIN     101
 #define IDC_EDIT_ID   1001
 #define ID_TRAY_EXIT  2001
@@ -30,23 +29,21 @@ static const char* STUN_SERVERS[] = {
     "stun2.l.google.com:19302", "stun3.l.google.com:19302", "stun4.l.google.com:19302"
 };
 #define STUN_COUNT 9
-
 #define P2P_PORT      9000
 #define AUTH_MAGIC    0xABCDEF12
-#define CHUNK_SIZE    1150 // 略微缩小，防止某些路由器 MTU 限制导致的丢包
+#define CHUNK_SIZE    1100
 
 #pragma pack(push, 1)
 typedef struct {
     unsigned int magic;
-    int type;       // 1:左键, 2:屏幕JPEG分片, 3:右键
+    int type;       // 1:左键, 2:屏幕, 3:右键, 4:键盘, 5:双击
     int frame_id;   
-    int offset;     
-    int total_size; 
+    int v1;         // X 或 KeyCode
+    int v2;         // Y 或 KeyFlags
     int slice_size; 
     unsigned char data[CHUNK_SIZE];
 } P2PPacket;
 #pragma pack(pop)
 
 #define CLR_ACTIVE    RGB(0, 255, 0)
-
 #endif
