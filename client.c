@@ -1,6 +1,5 @@
 #include "p2p_config.h"
 
-// --- 手动声明 GDI+ C 接口 ---
 typedef void GpBitmap;
 typedef void GpImage;
 typedef void GpGraphics;
@@ -23,13 +22,16 @@ GpBitmap* g_dispBmp = NULL;
 ULONG_PTR g_gdiToken;
 
 DWORD WINAPI RecvThread(LPVOID lp) {
-    g_recvBuf = (unsigned char*)malloc(2048 * 1024);
+    g_recvBuf = (unsigned char*)malloc(2 * 1024 * 1024);
     P2PPacket pkt;
     struct sockaddr_in f; int fl = sizeof(f);
     while(1) {
         int r = recvfrom(g_sock, (char*)&pkt, sizeof(pkt), 0, (struct sockaddr*)&f, &fl);
         if(r > 0 && pkt.magic == AUTH_MAGIC && pkt.type == 2) {
             if (pkt.frame_id >= g_lastId) {
+                if (pkt.frame_id > g_lastId) { // 新的一帧开始，如果是旧帧丢掉
+                    g_lastId = pkt.frame_id;
+                }
                 memcpy(g_recvBuf + pkt.offset, pkt.data, pkt.slice_size);
                 if (pkt.offset + pkt.slice_size >= pkt.total_size) {
                     IStream* stream = SHCreateMemStream(g_recvBuf, pkt.total_size);
@@ -42,7 +44,6 @@ DWORD WINAPI RecvThread(LPVOID lp) {
                         }
                         stream->lpVtbl->Release(stream);
                     }
-                    g_lastId = pkt.frame_id;
                 }
             }
         }
@@ -60,7 +61,7 @@ LRESULT CALLBACK MainWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             GdipDeleteGraphics(g);
         }
         HBRUSH br = CreateSolidBrush(CLR_ACTIVE); SelectObject(hdc, br);
-        Ellipse(hdc, 10, 10, 22, 22); DeleteObject(br);
+        Ellipse(hdc, 8, 8, 18, 18); DeleteObject(br);
         EndPaint(h, &ps); return 0;
     }
     if (m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN) {
@@ -70,7 +71,16 @@ LRESULT CALLBACK MainWndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         P2PPacket p = { AUTH_MAGIC, (m == WM_LBUTTONDOWN ? 1 : 3), 0, rx, ry };
         sendto(g_sock, (char*)&p, sizeof(p), 0, (struct sockaddr*)&g_srv, sizeof(g_srv));
     }
-    if (m == WM_DESTROY) { PostQuitMessage(0); }
+    if (m == WM_TRAY_MSG && l == WM_RBUTTONUP) {
+        POINT p; GetCursorPos(&p); HMENU hMenu = CreatePopupMenu();
+        AppendMenuW(hMenu, MF_STRING, ID_TRAY_EXIT, L"退出控制端");
+        SetForegroundWindow(h); TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, p.x, p.y, 0, h, NULL);
+        DestroyMenu(hMenu);
+    }
+    if (m == WM_COMMAND && LOWORD(w) == ID_TRAY_EXIT) {
+        Shell_NotifyIconW(NIM_DELETE, &g_nid); ExitProcess(0);
+    }
+    if (m == WM_DESTROY) { Shell_NotifyIconW(NIM_DELETE, &g_nid); PostQuitMessage(0); }
     return DefWindowProc(h, m, w, l);
 }
 
@@ -90,12 +100,19 @@ int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     Gsi gsi = {1, NULL, FALSE, FALSE};
     GdiplusStartup(&g_gdiToken, &gsi, NULL);
     if (DialogBoxParamA(hI, MAKEINTRESOURCEA(IDD_LOGIN), NULL, DlgProc, 0) != IDOK) return 0;
+    
     g_sock = socket(AF_INET, SOCK_DGRAM, 0);
     WNDCLASSW wc = {0}; wc.lpfnWndProc = MainWndProc; wc.hInstance = hI; wc.lpszClassName = L"P2PView";
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH); wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     RegisterClassW(&wc);
-    // 默认窗口比例设为常见 16:9
-    g_mainWnd = CreateWindowW(L"P2PView", L"Control", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 960, 540, 0, 0, hI, 0);
+    g_mainWnd = CreateWindowW(L"P2PView", L"Remote Control", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 960, 540, 0, 0, hI, 0);
+
+    g_nid.cbSize = sizeof(g_nid); g_nid.hWnd = g_mainWnd; g_nid.uID = 1;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP; g_nid.uCallbackMessage = WM_TRAY_MSG;
+    g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wcscpy(g_nid.szTip, L"P2P Control 已启动");
+    Shell_NotifyIconW(NIM_ADD, &g_nid);
+
     CreateThread(NULL, 0, RecvThread, NULL, 0, NULL);
     MSG msg; while (GetMessage(&msg, NULL, 0, 0)) { TranslateMessage(&msg); DispatchMessage(&msg); }
     return 0;
