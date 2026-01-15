@@ -46,12 +46,13 @@ void GetPublicIP(char* outIP) {
 }
 
 DWORD WINAPI ScreenThread(LPVOID lp) {
-    VideoCodec_InitSender(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+    // 修复：传入 g_srvSock 满足新定义的 3 个参数要求
+    VideoCodec_InitSender(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN), g_srvSock);
     while (1) {
         if (g_hasClient) {
             VideoCodec_CaptureAndSend(g_srvSock, &g_clientAddr);
         }
-        Sleep(30); // 提高采样频率
+        Sleep(30); 
     }
     return 0;
 }
