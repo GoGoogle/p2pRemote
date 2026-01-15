@@ -29,7 +29,7 @@ DWORD WINAPI RecvThread(LPVOID lp) {
         if(r > 0 && p.magic == AUTH_MAGIC && p.type == 2) {
             if (p.frame_id >= g_curFid) {
                 memcpy(g_recvBuf + p.v1, p.data, p.slice_size);
-                if (p.v1 + p.slice_size >= p.v2) { // 帧完成
+                if (p.v1 + p.slice_size >= p.v2) {
                     IStream* s = SHCreateMemStream(g_recvBuf, p.v2);
                     if (s) {
                         GpBitmap* nb = NULL;
@@ -57,10 +57,9 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             GdipDeleteGraphics(g);
         }
         HBRUSH br = CreateSolidBrush(CLR_ACTIVE); SelectObject(hdc, br);
-        Ellipse(hdc, 10, 10, 20, 20); DeleteObject(br);
+        Ellipse(hdc, 10, 10, 22, 22); DeleteObject(br); // 指示灯
         EndPaint(h, &ps); return 0;
     }
-    // 鼠标逻辑
     if (m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN || m == WM_LBUTTONDBLCLK) {
         RECT rc; GetClientRect(h, &rc);
         int rx = (LOWORD(l) * GetSystemMetrics(SM_CXSCREEN)) / (rc.right ? rc.right : 1);
@@ -69,11 +68,10 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         P2PPacket p = { AUTH_MAGIC, type, 0, rx, ry };
         sendto(g_sock, (char*)&p, sizeof(p), 0, (struct sockaddr*)&g_srv, sizeof(g_srv));
     }
-    // 键盘捕捉
     if (m == WM_KEYDOWN || m == WM_KEYUP || m == WM_SYSKEYDOWN || m == WM_SYSKEYUP) {
         P2PPacket p = { AUTH_MAGIC, 4, 0, (int)w, (m == WM_KEYUP || m == WM_SYSKEYUP) ? KEYEVENTF_KEYUP : 0 };
         sendto(g_sock, (char*)&p, sizeof(p), 0, (struct sockaddr*)&g_srv, sizeof(g_srv));
-        if (m == WM_SYSKEYDOWN) return 0; // 拦截系统键
+        if (m == WM_SYSKEYDOWN) return 0;
     }
     if (m == WM_TRAY_MSG && l == WM_RBUTTONUP) {
         POINT p; GetCursorPos(&p); HMENU hm = CreatePopupMenu();
@@ -101,19 +99,14 @@ int APIENTRY WinMain(HINSTANCE hI, HINSTANCE hP, LPSTR lp, int nS) {
     WSADATA wsa; WSAStartup(0x0202, &wsa);
     Gsi gsi = {1, NULL, FALSE, FALSE}; GdiplusStartup(&g_gdiToken, &gsi, NULL);
     if (DialogBoxParamA(hI, MAKEINTRESOURCEA(IDD_LOGIN), NULL, DlgProc, 0) != IDOK) return 0;
-    
     g_sock = socket(AF_INET, SOCK_DGRAM, 0);
     WNDCLASSW wc = {0}; wc.lpfnWndProc = MainProc; wc.hInstance = hI; wc.lpszClassName = L"View";
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH); wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.style = CS_DBLCLKS; // 允许双击
-    RegisterClassW(&wc);
+    wc.style = CS_DBLCLKS; RegisterClassW(&wc);
     g_mainWnd = CreateWindowW(L"View", L"P2P Control", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 960, 540, 0, 0, hI, 0);
-
-    g_nid.cbSize = sizeof(g_nid); g_nid.hWnd = g_mainWnd; g_nid.uID = 1;
-    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP; g_nid.uCallbackMessage = WM_TRAY_MSG;
-    g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    g_nid.cbSize = sizeof(g_nid); g_nid.hWnd = g_mainWnd; g_nid.uID = 1; g_nid.uFlags = NIF_ICON|NIF_MESSAGE|NIF_TIP;
+    g_nid.uCallbackMessage = WM_TRAY_MSG; g_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     wcscpy(g_nid.szTip, L"P2P Control"); Shell_NotifyIconW(NIM_ADD, &g_nid);
-
     CreateThread(NULL, 0, RecvThread, NULL, 0, NULL);
     MSG msg; while (GetMessage(&msg, NULL, 0, 0)) { TranslateMessage(&msg); DispatchMessage(&msg); }
     return 0;
