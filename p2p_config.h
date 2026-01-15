@@ -38,10 +38,10 @@ static const char* STUN_SERVERS[] = {
 #pragma pack(push, 1)
 typedef struct {
     unsigned int magic;
-    int type;       // 1: 左键, 2: 屏幕JPEG, 3: 右键
+    int type;       // 1:左键, 2:屏幕分片, 3:右键
     int frame_id;   
-    int offset;     // 在整帧中的偏移，或点击坐标X
-    int total_size; // 总大小，或点击坐标Y
+    int offset;     // 字节偏移 或 坐标X
+    int total_size; // 总大小 或 坐标Y
     int slice_size; 
     unsigned char data[CHUNK_SIZE];
 } P2PPacket;
