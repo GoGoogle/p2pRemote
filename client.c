@@ -17,20 +17,20 @@ struct sockaddr_in g_srv;
 HWND g_mainWnd;
 NOTIFYICONDATAW g_nid = {0};
 unsigned char* g_recvBuf = NULL;
-int g_curFid = 0;
+int g_lastFid = 0;
 GpBitmap* g_dispBmp = NULL;
 ULONG_PTR g_gdiToken;
 
 DWORD WINAPI RecvThread(LPVOID lp) {
-    g_recvBuf = (unsigned char*)malloc(2 * 1024 * 1024);
+    g_recvBuf = (unsigned char*)malloc(1024 * 1024);
     P2PPacket p; struct sockaddr_in f; int fl = sizeof(f);
     while(1) {
         int r = recvfrom(g_sock, (char*)&p, sizeof(p), 0, (struct sockaddr*)&f, &fl);
         if(r > 0 && p.magic == AUTH_MAGIC && p.type == 2) {
-            if (p.frame_id >= g_curFid) {
-                memcpy(g_recvBuf + p.v1, p.data, p.slice_size);
-                if (p.v1 + p.slice_size >= p.v2) {
-                    IStream* s = SHCreateMemStream(g_recvBuf, p.v2);
+            if (p.frame_id >= g_lastFid) {
+                memcpy(g_recvBuf + p.offset, p.data, p.slice_size);
+                if (p.offset + p.slice_size >= p.total_size) {
+                    IStream* s = SHCreateMemStream(g_recvBuf, p.total_size);
                     if (s) {
                         GpBitmap* nb = NULL;
                         if (GdipCreateBitmapFromStream(s, &nb) == 0) {
@@ -39,7 +39,7 @@ DWORD WINAPI RecvThread(LPVOID lp) {
                         }
                         s->lpVtbl->Release(s);
                     }
-                    g_curFid = p.frame_id;
+                    g_lastFid = p.frame_id;
                 }
             }
         }
@@ -56,8 +56,8 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
             GdipDrawImageRectI(g, (GpImage*)g_dispBmp, 0, 0, rc.right, rc.bottom);
             GdipDeleteGraphics(g);
         }
-        HBRUSH br = CreateSolidBrush(CLR_ACTIVE); SelectObject(hdc, br);
-        Ellipse(hdc, 10, 10, 22, 22); DeleteObject(br); // 指示灯
+        HBRUSH br = CreateSolidBrush(RGB(0,255,0)); SelectObject(hdc, br);
+        Ellipse(hdc, 10, 10, 20, 20); DeleteObject(br);
         EndPaint(h, &ps); return 0;
     }
     if (m == WM_LBUTTONDOWN || m == WM_RBUTTONDOWN || m == WM_LBUTTONDBLCLK) {
@@ -68,10 +68,9 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         P2PPacket p = { AUTH_MAGIC, type, 0, rx, ry };
         sendto(g_sock, (char*)&p, sizeof(p), 0, (struct sockaddr*)&g_srv, sizeof(g_srv));
     }
-    if (m == WM_KEYDOWN || m == WM_KEYUP || m == WM_SYSKEYDOWN || m == WM_SYSKEYUP) {
-        P2PPacket p = { AUTH_MAGIC, 4, 0, (int)w, (m == WM_KEYUP || m == WM_SYSKEYUP) ? KEYEVENTF_KEYUP : 0 };
+    if (m == WM_KEYDOWN || m == WM_KEYUP) {
+        P2PPacket p = { AUTH_MAGIC, 4, 0, (int)w, (m == WM_KEYUP ? KEYEVENTF_KEYUP : 0) };
         sendto(g_sock, (char*)&p, sizeof(p), 0, (struct sockaddr*)&g_srv, sizeof(g_srv));
-        if (m == WM_SYSKEYDOWN) return 0;
     }
     if (m == WM_TRAY_MSG && l == WM_RBUTTONUP) {
         POINT p; GetCursorPos(&p); HMENU hm = CreatePopupMenu();
@@ -80,7 +79,6 @@ LRESULT CALLBACK MainProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         DestroyMenu(hm);
     }
     if (m == WM_COMMAND && LOWORD(w) == ID_TRAY_EXIT) { Shell_NotifyIconW(NIM_DELETE, &g_nid); ExitProcess(0); }
-    if (m == WM_DESTROY) { Shell_NotifyIconW(NIM_DELETE, &g_nid); PostQuitMessage(0); }
     return DefWindowProc(h, m, w, l);
 }
 
