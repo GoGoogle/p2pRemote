@@ -29,14 +29,15 @@ static const char* STUN_SERVERS[] = {
     "stun2.l.google.com:19302", "stun3.l.google.com:19302", "stun4.l.google.com:19302"
 };
 #define STUN_COUNT 9
+
 #define P2P_PORT      9000
 #define AUTH_MAGIC    0xABCDEF12
-#define CHUNK_SIZE    1100
+#define CHUNK_SIZE    1100 
 
 #pragma pack(push, 1)
 typedef struct {
     unsigned int magic;
-    int type;       // 1:左键, 2:屏幕, 3:右键, 4:键盘, 5:双击
+    int type;       // 1:左键, 2:JPEG数据, 3:右键, 4:键盘, 5:双击
     int frame_id;   
     int v1;         // X 或 KeyCode
     int v2;         // Y 或 KeyFlags
